@@ -10,11 +10,12 @@ export class ScrapperController {
     }
 
     async getCategories() {
-        const browser = await puppeteer.launch({ headless: true });
+        const browser = await puppeteer.launch({ headless: false });
         const page: Page = await browser.newPage();
 
         try {
             const categories = await this.scrapperService.getCategories(page);
+            console.log(categories[0].subcategory)
             for(const subCategories of categories[0].subcategory){
                 for(const subsubcategories of subCategories.subsubcategory){
                     const products = await this.scrapperService.GetProducts(page, subsubcategories.link, subCategories.name)

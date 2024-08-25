@@ -1,13 +1,14 @@
 import { Page } from "puppeteer";
 import { Product, Category, Subcategory, SubSubCategory } from "./types";
 import Redis from 'ioredis';
+import dotenv from "dotenv"
 
-const redis = new Redis({
-    host:  process.env.REDIS_HOST,
-    port: 6379,
-    password: process.env.REDIS_PASSWORD,
-    db: 0
-});
+dotenv.config();
+
+console.log();
+
+
+const redis = new Redis('redis://default:vrYkwQoTbGitvBzlwHMGbNkyPBCayCcb@monorail.proxy.rlwy.net:32610');
 
 
 export class ScrapperService {
@@ -90,26 +91,29 @@ export class ScrapperService {
                         console.log(`  Found ${subSubCategoriesElements.length} subsubcategory elements.`);
                         const subsubcategories: SubSubCategory[] = [];
                         let subSubCategoryIndex = 0;
+                        if (subCategoriesElements.length === 0){
+                            const linkElement = await page.$('.nav__sub-el-link');
+
+                            if (linkElement) {
+                                const name = await page.evaluate(el => el.textContent?.trim() || '', linkElement);
+                                const href = await page.evaluate(el => (el as HTMLAnchorElement).href || '', linkElement);
+                        
+                                subsubcategories.push({
+                                    name,
+                                    link: href,
+                                    category: subCategoryName,
+                                    products: [] 
+                                });
+                            }
+                        }
 
                         for (const subSubCategoryElement of subSubCategoriesElements) {
                             try {
                                 const subSubCategoryLinks = await page.evaluate((el: Element) => {
-                                    return Array.from(el.querySelectorAll('.nav__sub-el')).map(subList => {
-                                        const links = subList.querySelectorAll('.nav__sub-list-el-link');
-                                        
-                                        if (links.length > 0) {
-                                            return Array.from(links).map(link => ({
-                                                name: link.textContent?.trim() || '',
-                                                href: (link as HTMLAnchorElement).href || '',
-                                            }));
-                                        } else {
-                                            const titleElement = subList.querySelector('.nav__sub-el-link');
-                                            return {
-                                                name: titleElement?.textContent?.trim() || '',
-                                                href: (titleElement as HTMLAnchorElement)?.href || '',
-                                            };
-                                        }
-                                    }).flat(); 
+                                    return Array.from(el.querySelectorAll('.nav__sub-list-el-link')).map(link => ({
+                                        name: link.textContent?.trim() || '',
+                                        href: (link as HTMLAnchorElement).href || '',
+                                    }));
                                 }, subSubCategoryElement);
                                 
                                 const products: Product[] = [];
@@ -198,7 +202,6 @@ export class ScrapperService {
                     await retryRequest(page, url);
                 } else {
                     console.error(`Failed to load the page after ${maxRetries} attempts.`);
-                    
                     throw new Error(`Failed to load the page after ${maxRetries} attempts.`);
                 }
             } else {
@@ -284,6 +287,7 @@ export class ScrapperService {
         } catch (error) {
             console.error('Error fetching products:', error);
             await addToRedis(url);
+            await page.reload()
         }
     
         return response;
