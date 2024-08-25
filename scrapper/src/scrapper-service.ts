@@ -1,10 +1,19 @@
 import { Page } from "puppeteer";
 import { Product, Category, Subcategory, SubSubCategory } from "./types";
+import Redis from 'ioredis';
+
+const redis = new Redis({
+    host:  process.env.REDIS_HOST,
+    port: 6379,
+    password: process.env.REDIS_PASSWORD,
+    db: 0
+});
+
 
 export class ScrapperService {
     async getCategories(page: Page): Promise<Category[]> {
         const response: Category[] = [];
-        const maxRetries = 3; // Maximum number of retries
+        const maxRetries = 3; 
         let attempt = 0;
         
         const userAgents = [
@@ -84,19 +93,34 @@ export class ScrapperService {
 
                         for (const subSubCategoryElement of subSubCategoriesElements) {
                             try {
-                                console.log(`    Processing subsubcategory ${subSubCategoryIndex + 1}...`);
-                                const subSubCategoryName = await page.evaluate((el: Element) => el.querySelector('.nav__sub-el-title')?.textContent?.trim() || '', subSubCategoryElement);
-                                const subSubCategoryLink = await page.evaluate((el: Element) => (el.querySelector('.nav__sub-el-link') as HTMLAnchorElement)?.href || '', subSubCategoryElement);
-                                console.log(`    Subsubcategory: ${subSubCategoryName}, Link: ${subSubCategoryLink}`);
-
+                                const subSubCategoryLinks = await page.evaluate((el: Element) => {
+                                    return Array.from(el.querySelectorAll('.nav__sub-el')).map(subList => {
+                                        const links = subList.querySelectorAll('.nav__sub-list-el-link');
+                                        
+                                        if (links.length > 0) {
+                                            return Array.from(links).map(link => ({
+                                                name: link.textContent?.trim() || '',
+                                                href: (link as HTMLAnchorElement).href || '',
+                                            }));
+                                        } else {
+                                            const titleElement = subList.querySelector('.nav__sub-el-link');
+                                            return {
+                                                name: titleElement?.textContent?.trim() || '',
+                                                href: (titleElement as HTMLAnchorElement)?.href || '',
+                                            };
+                                        }
+                                    }).flat(); 
+                                }, subSubCategoryElement);
+                                
                                 const products: Product[] = [];
-
-                                subsubcategories.push({
-                                    name: subSubCategoryName,
-                                    link: subSubCategoryLink,
-                                    category: subCategoryName,
-                                    products: products,
-                                });
+                                subSubCategoryLinks.forEach(({ name, href }) => {
+                                    subsubcategories.push({
+                                        name: name,
+                                        link: href,
+                                        category: subCategoryName,
+                                        products: products,
+                                    });
+                                });                                
                             } catch (error) {
                                 console.error(`    Error processing subsubcategory at index ${subSubCategoryIndex}:`, error);
                                 if (attempt < maxRetries) {
@@ -136,7 +160,7 @@ export class ScrapperService {
                 });
 
                 console.log(`Category ${categoryName} processed successfully.`);
-                break; // Remove this break if you want to continue iterating through other categories.
+                break; 
             }
         } catch (error) {
             console.error('Error extracting categories:', error);
@@ -145,7 +169,123 @@ export class ScrapperService {
         return response;
     }
 
-    async GetProducts(){
-        
+    private readonly productUserAgents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:90.0) Gecko/20100101 Firefox/90.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36"
+    ];
+
+    async GetProducts(page: Page, url: string, category: string): Promise<Product[]> {
+        const response: Product[] = [];
+        const maxRetries = 3; 
+        let attempt = 0;
+    
+        const addToRedis = async (url: string) => {
+            await redis.lpush('failed_urls', url);
+            console.log(`Added ${url} to Redis for retrying later.`);
+        };
+    
+        const retryRequest = async (page: Page, url: string): Promise<void> => {
+            attempt++;
+            const userAgent = this.productUserAgents[attempt % this.productUserAgents.length];
+            console.log(`Attempt ${attempt}: Setting user-agent to ${userAgent}`);
+            await page.setUserAgent(userAgent);
+            console.log(`Attempt ${attempt}: Navigating to ${url}`);
+            const response = await page.goto(url, { waitUntil: 'networkidle2' });
+            if (response && response.status() !== 200) {
+                console.warn(`Attempt ${attempt}: Received non-200 status code (${response.status()}). Retrying...`);
+                if (attempt < maxRetries) {
+                    await retryRequest(page, url);
+                } else {
+                    console.error(`Failed to load the page after ${maxRetries} attempts.`);
+                    
+                    throw new Error(`Failed to load the page after ${maxRetries} attempts.`);
+                }
+            } else {
+                console.log(`Attempt ${attempt}: Page loaded successfully with status ${response?.status()}`);
+            }
+        };
+    
+        const fetchProductsFromPage = async (page: Page): Promise<Product[]> => {
+            await page.waitForSelector('.item-cards-grid');
+            console.log('Product grid is visible.');
+    
+            return page.evaluate((category: string) => {
+                const productElements = document.querySelectorAll('.item-card');
+                console.log(productElements.length);
+                return Array.from(productElements).map((el) => {
+                    const nameElement = el.querySelector('.item-card__name') as HTMLElement;
+                    const imageElement = el.querySelector('.item-card__image') as HTMLImageElement;
+                    const priceElement = el.querySelector('.item-card__prices-price') as HTMLElement;
+                    return {
+                        name: nameElement ? nameElement.innerText : '',
+                        url: (el.querySelector('a') as HTMLAnchorElement)?.href || '',
+                        image: imageElement ? imageElement.src : '',
+                        category: category || "", 
+                        price: priceElement ? priceElement.innerText : '',
+                    };
+                });
+            }, category);
+        };
+    
+        try {
+            console.log('Starting to fetch products...');
+            console.log(category);
+    
+            await retryRequest(page, url);
+    
+            let hasMorePages = true;
+    
+            while (hasMorePages) {
+                const products = await fetchProductsFromPage(page);
+                response.push(...products);
+    
+                const paginationButtons = await page.$$('.pagination__el');
+                const lastButton = paginationButtons[paginationButtons.length - 1];
+    
+                if (lastButton && !await lastButton.evaluate(el => el.classList.contains('_disabled'))) {
+                    console.log('Clicking next page...');
+    
+                    let clicked = false;
+                    const maxRetries = 5;
+                    let attempts = 0;
+    
+                    while (!clicked && attempts < maxRetries) {
+                        attempts += 1;
+    
+                        await lastButton.click();
+    
+                        try {
+                            await Promise.race([
+                                page.waitForNavigation({ waitUntil: 'networkidle2' }),
+                                new Promise((resolve, reject) => setTimeout(reject, 5000)) 
+                            ]);
+    
+                            clicked = true;
+                        } catch (error) {
+                            console.log(`Attempt ${attempts} failed. Retrying...`);
+                        }
+                    }
+    
+                    if (!clicked) {
+                        console.error('Failed to navigate after 3 attempts.');
+                    } else {
+                        console.log('Navigation successful.');
+                    }
+    
+                    console.log('Navigated to next page.');
+                } else {
+                    hasMorePages = false;
+                    console.log('No more pages or pagination is disabled.');
+                }
+            }
+    
+            console.log(`Fetched ${response.length} products successfully.`);
+        } catch (error) {
+            console.error('Error fetching products:', error);
+            await addToRedis(url);
+        }
+    
+        return response;
     }
 }
