@@ -17,6 +17,9 @@ export class ScrapperController {
             const categories = await this.scrapperService.getCategories(page);
             console.log(categories[0].subcategory)
             for(const subCategories of categories[0].subcategory){
+                if (subCategories.name.toLowerCase() === "бытовая техника"){
+                    continue
+                }
                 for(const subsubcategories of subCategories.subsubcategory){
                     const products = await this.scrapperService.GetProducts(page, subsubcategories.link, subCategories.name)
                     subsubcategories.products = products               

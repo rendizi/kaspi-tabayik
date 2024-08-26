@@ -8,8 +8,7 @@ dotenv.config();
 console.log();
 
 
-const redis = new Redis('redis://default:vrYkwQoTbGitvBzlwHMGbNkyPBCayCcb@monorail.proxy.rlwy.net:32610');
-
+const redis = new Redis(process.env.REDIS || "");
 
 export class ScrapperService {
     async getCategories(page: Page): Promise<Category[]> {
@@ -91,50 +90,64 @@ export class ScrapperService {
                         console.log(`  Found ${subSubCategoriesElements.length} subsubcategory elements.`);
                         const subsubcategories: SubSubCategory[] = [];
                         let subSubCategoryIndex = 0;
-                        if (subCategoriesElements.length === 0){
-                            const linkElement = await page.$('.nav__sub-el-link');
-
-                            if (linkElement) {
-                                const name = await page.evaluate(el => el.textContent?.trim() || '', linkElement);
-                                const href = await page.evaluate(el => (el as HTMLAnchorElement).href || '', linkElement);
                         
-                                subsubcategories.push({
-                                    name,
-                                    link: href,
-                                    category: subCategoryName,
-                                    products: [] 
-                                });
-                            }
-                        }
 
                         for (const subSubCategoryElement of subSubCategoriesElements) {
                             try {
-                                const subSubCategoryLinks = await page.evaluate((el: Element) => {
-                                    return Array.from(el.querySelectorAll('.nav__sub-list-el-link')).map(link => ({
-                                        name: link.textContent?.trim() || '',
-                                        href: (link as HTMLAnchorElement).href || '',
-                                    }));
-                                }, subSubCategoryElement);
+                                const subSubSubCategoryElements = await subSubCategoryElement.$$('.nav__sub-list-el-link');                                // Query all sub-sub-sub-category elements
                                 
-                                const products: Product[] = [];
-                                subSubCategoryLinks.forEach(({ name, href }) => {
-                                    subsubcategories.push({
-                                        name: name,
-                                        link: href,
-                                        category: subCategoryName,
-                                        products: products,
-                                    });
-                                });                                
-                            } catch (error) {
-                                console.error(`    Error processing subsubcategory at index ${subSubCategoryIndex}:`, error);
-                                if (attempt < maxRetries) {
-                                    console.warn(`    Retrying subsubcategory at index ${subSubCategoryIndex}. Attempt ${attempt}...`);
-                                    await retryRequest(page, categoryLink);
-                                    subSubCategoryIndex--;
+                                // Check if there are no sub-sub-categories
+                                if (subSubSubCategoryElements.length === 0) {
+                                    console.log("No sub-sub-categories found");
+                                    const linkElement = await subSubCategoryElement.$('.nav__sub-el-link');
+                            
+                                    if (linkElement) {
+                                        const name = await page.evaluate(el => el.textContent?.trim() || '', linkElement);
+                                        const href = await page.evaluate(el => (el as HTMLAnchorElement).href || '', linkElement);
+                            
+                                        subsubcategories.push({
+                                            name,
+                                            link: href,
+                                            category: subCategoryName,
+                                            products: []
+                                        });
+                                    }
                                 } else {
-                                    throw error;
+                                    const subSubCategoryLinks = await Promise.all(
+                                        subSubSubCategoryElements.map(async (element) => {
+                                            const name = await element.evaluate(el => el.textContent?.trim() || '');
+                                            const href = await element.evaluate(el => (el as HTMLAnchorElement).href || '');
+                                    
+                                            return {
+                                                name,
+                                                href,
+                                            };
+                                        })
+                                    );
+                            
+                                    for (const subSubSubCategoryElement of subSubSubCategoryElements) {
+                                        const name = await page.evaluate(el => el.textContent?.trim() || '', subSubSubCategoryElement);
+                                        const href = await page.evaluate(el => (el as HTMLAnchorElement).href || '', subSubSubCategoryElement);
+                                    
+                                        subsubcategories.push({
+                                            name: name,
+                                            link: href,
+                                            category: subCategoryName,
+                                            products: [],
+                                        });
+                                    }
+  
+                            }} catch (error) {
+                                console.error(`Error processing subsubcategory at index ${subSubCategoryIndex}:`, error);
+                                if (attempt < maxRetries) {
+                                    console.warn(`Retrying subsubcategory at index ${subSubCategoryIndex}. Attempt ${attempt + 1}...`);
+                                    await retryRequest(page, categoryLink);
+                                    subSubCategoryIndex--; // Decrement index to retry the current subsubcategory
+                                } else {
+                                    throw error; // Re-throw the error after max retries
                                 }
                             }
+                            
                             subSubCategoryIndex++;
                         }
 
@@ -271,7 +284,7 @@ export class ScrapperService {
                     }
     
                     if (!clicked) {
-                        console.error('Failed to navigate after 3 attempts.');
+                        throw new Error('Failed to navigate after 3 attempts.');
                     } else {
                         console.log('Navigation successful.');
                     }
@@ -286,8 +299,8 @@ export class ScrapperService {
             console.log(`Fetched ${response.length} products successfully.`);
         } catch (error) {
             console.error('Error fetching products:', error);
-            await addToRedis(url);
             await page.reload()
+            return this.GetProducts(page, url, category)
         }
     
         return response;
