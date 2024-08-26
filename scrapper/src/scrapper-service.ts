@@ -192,7 +192,7 @@ export class ScrapperService {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36"
     ];
 
-    async GetProducts(page: Page, url: string, category: string): Promise<Product[]> {
+    async GetProducts(page: Page, url: string, category: string, tries: number): Promise<Product[]> {
         const response: Product[] = [];
         const maxRetries = 3; 
         let attempt = 0;
@@ -299,8 +299,10 @@ export class ScrapperService {
             console.log(`Fetched ${response.length} products successfully.`);
         } catch (error) {
             console.error('Error fetching products:', error);
-            await page.reload()
-            return this.GetProducts(page, url, category)
+            if (tries > 0){
+	    await page.reload()
+            return this.GetProducts(page, url, category, tries -1)
+	    }
         }
     
         return response;

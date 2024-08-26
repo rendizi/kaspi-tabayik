@@ -16,12 +16,18 @@ export class ScrapperController {
         try {
             const categories = await this.scrapperService.getCategories(page);
             console.log(categories[0].subcategory)
+	    let i = 0
             for(const subCategories of categories[0].subcategory){
-                if (subCategories.name.toLowerCase() === "бытовая техника"){
+                i += 1
+		  if (i <= 4){
+			  continue
+		  }
+		    
+		    if (subCategories.name.toLowerCase() === "бытовая техника" || subCategories.name.toLowerCase() === "телефоны и гаджеты" || subCategories.name.toLowerCase() === "тв, аудио, видео" || subCategories.name.toLowerCase() === "компьютеры"){
                     continue
                 }
                 for(const subsubcategories of subCategories.subsubcategory){
-                    const products = await this.scrapperService.GetProducts(page, subsubcategories.link, subCategories.name)
+                    const products = await this.scrapperService.GetProducts(page, subsubcategories.link, subCategories.name, 3)
                     subsubcategories.products = products               
                 }
                 const fileName = `${subCategories.name.toLowerCase()}.json`;
