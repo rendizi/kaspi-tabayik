@@ -10,8 +10,8 @@ from transformers import CLIPProcessor, CLIPModel
 import os 
 from flask_cors import CORS
 
-CORS(app)
 app = Flask(__name__)
+CORS(app)
 
 logging.basicConfig(level=logging.DEBUG)
 
