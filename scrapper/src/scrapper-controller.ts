@@ -19,7 +19,7 @@ export class ScrapperController {
 	    let i = 0
             for(const subCategories of categories[0].subcategory){
                 i += 1
-		  if (i <= 4){
+		  if (i <= 11){
 			  continue
 		  }
 		    
