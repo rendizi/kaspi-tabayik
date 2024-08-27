@@ -8,7 +8,9 @@ from pinecone import Pinecone
 from bs4 import BeautifulSoup
 from transformers import CLIPProcessor, CLIPModel
 import os 
+from flask_cors import CORS
 
+CORS(app)
 app = Flask(__name__)
 
 logging.basicConfig(level=logging.DEBUG)
