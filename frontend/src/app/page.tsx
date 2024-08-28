@@ -1,81 +1,69 @@
-import { useState } from "react";
-import axios from "axios";
+'use client'
+
+import { useState, useRef, useEffect } from "react";
+import { FileUpload, QueryResponse } from "./components/FileUpload";
+import { Footer } from "./components/Footer";
 
 export default function Home() {
-  const [image, setImage] = useState<File | null>(null);
-  const [results, setResults] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [response, setResponse] = useState<QueryResponse | null>(null);
+  const responseRef = useRef<HTMLDivElement | null>(null);
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const file = event.dataTransfer.files[0];
-    if (file) {
-      setImage(file);
-    }
+  const handleResponse = (data: QueryResponse) => {
+    setResponse(data);
   };
 
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-  };
-
-  const handleSearch = async () => {
-    if (!image) return;
-
-    setLoading(true);
-
-    const formData = new FormData();
-    formData.append("image", image);
-
-    try {
-      const response = await axios.post("http://localhost:8000/query-image/", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
+  useEffect(() => {
+    if (response && response.matches && response.matches.length > 0 && responseRef.current) {
+      requestAnimationFrame(() => {
+        responseRef.current?.scrollIntoView({ behavior: 'smooth' });
       });
-      setResults(response.data);
-    } catch (error) {
-      console.error("Error uploading image", error);
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [response]);
 
   return (
-    <div className="p-4">
-      <div
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        className="border-2 border-dashed border-gray-300 p-4 text-center mb-4"
-      >
-        {image ? (
-          <p>File: {image.name}</p>
-        ) : (
-          <p>Drag & drop an image here, or click to select one</p>
-        )}
-      </div>
-
-      <button
-        onClick={handleSearch}
-        className="bg-blue-500 text-white py-2 px-4 rounded"
-        disabled={loading}
-      >
-        {loading ? "Searching..." : "Search"}
-      </button>
-
-      {results && (
-        <div className="mt-4">
-          <h2 className="text-lg font-bold">Results:</h2>
-          <ul>
-            {results.matches.map((match: any) => (
-              <li key={match.id} className="border-b py-2">
-                <a href={match.metadata.url} target="_blank" rel="noopener noreferrer" className="text-blue-500">
-                  {match.metadata.name} - {match.metadata.price}
-                </a>
-              </li>
-            ))}
-          </ul>
+    <div>
+      <div className="flex flex-col items-center justify-center p-4 text-black bg-white h-screen w-full">
+        <div className="text-center mb-10">
+          <h1 className="text-3xl font-bold">Tabayik</h1>
+          <h2 className="text-xl mt-2">Poisk sredi bolee chem 400,000 tavarov</h2>
         </div>
+        <FileUpload onResponse={handleResponse} />
+      </div>
+      {response && response.matches && response.matches.length > 0 && (
+        <div className="flex flex-col justify-center items-center bg-white">
+        <div
+          className="mt-10 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-2/3 pb-6"
+          ref={responseRef}
+        >
+          {response.matches.map((match) => (
+            <div
+              key={match.id}
+              className="bg-white border border-gray-300 rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-300 transform hover:scale-105"
+            >
+              <img
+                src={match.metadata.image}
+                alt={match.metadata.name}
+                className="w-full h-64 object-contain"
+              />
+              <div className="p-5">
+                <h3 className="text-2xl font-bold mb-3 text-gray-800">{match.metadata.name}</h3>
+                <p className="text-xl text-gray-700 mb-4">{match.metadata.price}</p>
+                <a
+                  href={match.metadata.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block text-blue-600 hover:text-blue-800 font-semibold transition-colors duration-200"
+                >
+                  View Details
+                </a>
+              </div>
+            </div>
+          ))}
+
+        </div>
+      </div>
       )}
+      <Footer />
     </div>
   );
 }
