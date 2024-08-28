@@ -25,8 +25,8 @@ except Exception as e:
 
 try:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
+    processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
+    model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14").to(device)
     logging.debug("Model and processor loaded successfully")
 except Exception as e:
     logging.error(f"Failed to load model and processor: {e}")
@@ -96,33 +96,19 @@ def fetch_image():
 
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Connection': 'keep-alive'
     }
 
     try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        return f'Error fetching page: {e}', 500
-
-    soup = BeautifulSoup(response.content, 'html.parser')
-    img_tag = soup.find('img', class_='item__slider-pic')
-    if not img_tag or not img_tag.get('src'):
-        return 'Image not found', 404
-
-    img_url = img_tag['src']
-
-    try:
-        img_response = requests.get(img_url)
+        img_response = requests.get(url, headers=headers)
         img_response.raise_for_status()
     except requests.RequestException as e:
         return f'Error fetching image: {e}', 500
 
+    content_type = img_response.headers.get('Content-Type', 'image/jpeg')
+
     return Response(
         img_response.content,
-        mimetype='image/jpeg'  
+        mimetype=content_type
     )
 
 
